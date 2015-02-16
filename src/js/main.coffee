@@ -21,6 +21,7 @@ class Camera
 class Mesh
   constructor: (@name) ->
     @vertices = []
+    @faces = []
     @rotation = Vector3.Zero()
     @position = Vector3.Zero()
 
@@ -79,6 +80,39 @@ class Device
       # draw yellow
       @putPixel point.x, point.y, new Color4(1, 1, 0, 1)
 
+  drawLine: (p0, p1) ->
+    dist = p1.subtract(p0).length()
+    # exit early if the distance between the 2 points is less than 2 pixels
+    return if dist < 2
+
+    # find the middle point between p0 & p1
+    midPoint = p0.add((p1.subtract(p0)).scale(0.5))
+    @drawPoint(midPoint)
+    # recursive algorithm launched between p0 & midpoint
+    # and between midpoint & p1
+    @drawLine(p0, midPoint)
+    @drawLine(midPoint, p1)
+
+  drawBLine: (p0, p1) ->
+    x0 = p0.x >> 0
+    y0 = p0.y >> 0
+    x1 = p1.x >> 0
+    y1 = p1.y >> 0
+    dx = Math.abs(x1 - x0)
+    dy = Math.abs(y1 - y0)
+    sx = if x0 < x1 then 1 else -1
+    sy = if y0 < y1 then 1 else -1
+    err = dx - dy
+    while true
+      @drawPoint(new Vector2(x0, y0))
+      break if x0 == x1 && y0 == y1
+      e2 = err * 2
+      if e2 > -dy
+        err -= dy
+        x0 += sx
+      if e2 < dx
+        err += dx
+        y0 += sy
 
   # The main method of the engine that recomputes each vertex
   # projection on every frame
@@ -92,9 +126,26 @@ class Device
 
       transformMatrix = worldMatrix.multiply(viewMatrix).multiply(projectionMatrix)
 
-      for vertex in mesh.vertices
-        @drawPoint @project(vertex, transformMatrix)
+      ### Points only ###
+      # for vertex in mesh.vertices
+      #   @drawPoint @project(vertex, transformMatrix)
 
+      ### Naive line test ###
+      # for vertex, i in mesh.vertices[0...-1]
+      #   point0 = @project(mesh.vertices[i+0], transformMatrix)
+      #   point1 = @project(mesh.vertices[i+1], transformMatrix)
+      #   @drawLine(point0, point1)
+
+      for face in mesh.faces
+        vertexA = mesh.vertices[face.A]
+        vertexB = mesh.vertices[face.B]
+        vertexC = mesh.vertices[face.C]
+        pixelA = @project(vertexA, transformMatrix)
+        pixelB = @project(vertexB, transformMatrix)
+        pixelC = @project(vertexC, transformMatrix)
+        @drawBLine(pixelA, pixelB)
+        @drawBLine(pixelB, pixelC)
+        @drawBLine(pixelC, pixelA)
 
 
 canvas = document.getElementById('front-buffer')
@@ -102,18 +153,32 @@ device = new Device(canvas)
 camera = new Camera()
 meshes = []
 
-mesh = new Mesh("Cube", 8)
+mesh = new Mesh("Cube", 8, 12)
+meshes.push mesh
 mesh.vertices = [
   new Vector3(-1,  1,  1)
   new Vector3( 1,  1,  1)
   new Vector3(-1, -1,  1)
-  new Vector3(-1, -1, -1)
+  new Vector3( 1, -1,  1)
   new Vector3(-1,  1, -1)
   new Vector3( 1,  1, -1)
-  new Vector3( 1, -1,  1)
   new Vector3( 1, -1, -1)
+  new Vector3(-1, -1, -1)
 ]
-meshes.push mesh
+mesh.faces = [
+  { A: 0, B: 1, C: 2 }
+  { A: 1, B: 2, C: 3 }
+  { A: 1, B: 3, C: 6 }
+  { A: 1, B: 5, C: 6 }
+  { A: 0, B: 1, C: 4 }
+  { A: 1, B: 4, C: 5 }
+  { A: 2, B: 3, C: 7 }
+  { A: 3, B: 6, C: 7 }
+  { A: 0, B: 2, C: 7 }
+  { A: 0, B: 4, C: 7 }
+  { A: 4, B: 5, C: 6 }
+  { A: 4, B: 6, C: 7 }
+]
 
 camera.position = new Vector3(0, 0, 20)
 camera.target = new Vector3(0, 0, 0)
