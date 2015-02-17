@@ -1,30 +1,6 @@
-# softrenderer [![Dependency Status](https://david-dm.org/dy-dx/softrenderer.png)](https://david-dm.org/dy-dx/softrenderer) [![devDependency Status](https://david-dm.org/dy-dx/softrenderer/dev-status.png)](https://david-dm.org/dy-dx/softrenderer#info=devDependencies)
-
-Software 3D engine following this tutorial: http://blogs.msdn.com/b/davrous/archive/2013/06/13/tutorial-series-learning-how-to-write-a-3d-soft-engine-from-scratch-in-c-typescript-or-javascript.aspx
-
-Using npm modules instead of Babylon stuff, where possible.
-
-
-## Usage
-
-Clone this repo and install the dependencies:
-
-    $ npm install -g gulp
-    $ npm install
-
-Run:
-
-    $ gulp
-
-Develop in the `src` directory.
-
-
-
-## License
-
 (The MIT License)
 
-Copyright (c) 2015 Christopher Kim \<christopherjkim AT [Google's mail service]\>
+Copyright (c) 2015 Christopher Kim <christopherjkim AT [Google's mail service]>
 
 Permission is hereby granted, free of charge, to any person obtaining
 a copy of this software and associated documentation files (the
