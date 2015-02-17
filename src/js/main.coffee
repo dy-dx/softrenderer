@@ -1,29 +1,25 @@
 $ = require 'jquery'
 _ = require 'lodash'
 
-BabylonMath = require 'babylon-math'
-Vector2 = BabylonMath.Vector2
-Vector3 = BabylonMath.Vector3
-Color4 = BabylonMath.Color4
-Matrix = BabylonMath.Matrix
+Vec2 = require 'gl-matrix-vec2'
+Vec3 = require 'gl-matrix-vec3'
+Vec4 = require 'gl-matrix-vec4'
+Mat4 = require 'gl-matrix-mat4'
 
 
 # http://blogs.msdn.com/b/davrous/archive/2013/06/13/tutorial-series-learning-how-to-write-a-3d-soft-engine-from-scratch-in-c-typescript-or-javascript.aspx
 
-# $(document.body).append 'Hello, World!'
-
-
 class Camera
   constructor: ->
-    @position = Vector3.Zero()
-    @target = Vector3.Zero()
+    @position = Vec3.create()
+    @target = Vec3.create()
 
 class Mesh
   constructor: (@name) ->
     @vertices = []
     @faces = []
-    @rotation = Vector3.Zero()
-    @position = Vector3.Zero()
+    @rotation = Vec3.create()
+    @position = Vec3.create()
 
 
 class Device
@@ -64,29 +60,37 @@ class Device
   # Project takes some 3D coordinates and transforms them in 2D
   # coordinates using the transformation matrix
   project: (coord, transMat) ->
-    point = Vector3.TransformCoordinates(coord, transMat)
+    point = Vec4.fromValues(coord[0], coord[1], coord[2], 1)
+    point = Vec4.transformMat4(Vec4.create(), point, transMat)
+
+    # perspective divide
+    w = point[3]
+    point[0] /= w
+    point[1] /= w
+
     # The transformed coordinates will be based on a coordinate
     # system starting on the center of the screen. But drawing on
     # screen normally starts from top left. We then need to transform
     # them again to have (0, 0) on top left
-    x =  point.x * @canvas.width  + @canvas.width  / 2.0 >> 0
-    y = -point.y * @canvas.height + @canvas.height / 2.0 >> 0
-    return new Vector2(x, y)
+    x =  point[0] * @canvas.width  + @canvas.width  / 2.0 >> 0
+    y = -point[1] * @canvas.height + @canvas.height / 2.0 >> 0
+    return Vec2.fromValues(x, y)
 
   # drawPoint calls putPixel but does the clipping operation before
   drawPoint: (point) ->
     # Clipping what's visible on screen
-    if 0 <= point.x < @canvas.width && 0 <= point.y < @canvas.height
+    if 0 <= point[0] < @canvas.width && 0 <= point[1] < @canvas.height
       # draw yellow
-      @putPixel point.x, point.y, new Color4(1, 1, 0, 1)
+      @putPixel point[0], point[1], {r:1, g:1, b:0, a:1}
 
   drawLine: (p0, p1) ->
-    dist = p1.subtract(p0).length()
+    p0p1 = Vec2.subtract(Vec2.create(), p1, p0)
+    dist = Vec2.length(p0p1)
     # exit early if the distance between the 2 points is less than 2 pixels
     return if dist < 2
 
     # find the middle point between p0 & p1
-    midPoint = p0.add((p1.subtract(p0)).scale(0.5))
+    midPoint = Vec2.scaleAndAdd(Vec2.create(), p0, p0p1, 0.5)
     @drawPoint(midPoint)
     # recursive algorithm launched between p0 & midpoint
     # and between midpoint & p1
@@ -94,17 +98,17 @@ class Device
     @drawLine(midPoint, p1)
 
   drawBLine: (p0, p1) ->
-    x0 = p0.x >> 0
-    y0 = p0.y >> 0
-    x1 = p1.x >> 0
-    y1 = p1.y >> 0
+    x0 = p0[0] >> 0
+    y0 = p0[1] >> 0
+    x1 = p1[0] >> 0
+    y1 = p1[1] >> 0
     dx = Math.abs(x1 - x0)
     dy = Math.abs(y1 - y0)
     sx = if x0 < x1 then 1 else -1
     sy = if y0 < y1 then 1 else -1
     err = dx - dy
     while true
-      @drawPoint(new Vector2(x0, y0))
+      @drawPoint(Vec2.fromValues(x0, y0))
       break if x0 == x1 && y0 == y1
       e2 = err * 2
       if e2 > -dy
@@ -117,14 +121,29 @@ class Device
   # The main method of the engine that recomputes each vertex
   # projection on every frame
   render: (camera, meshes) ->
-    viewMatrix = Matrix.LookAtLH(camera.position, camera.target, Vector3.Up())
-    projectionMatrix = Matrix.PerspectiveFovLH(0.78, @canvas.width / @canvas.height, 0.01, 10.0)
+    up = Vec3.fromValues(0, 1, 0)
+    viewMatrix = Mat4.lookAt(Mat4.create(), camera.position, camera.target, up)
+
+    projectionMatrix = Mat4.perspective(Mat4.create(), 0.78, @canvas.width / @canvas.height, 0.01, 100.0)
 
     for mesh, index in meshes
-      worldMatrix = Matrix.RotationYawPitchRoll(mesh.rotation.y, mesh.rotation.x, mesh.rotation.z)
-        .multiply(Matrix.Translation(mesh.position.x, mesh.position.y, mesh.position.z))
+      # Rotate yaw, pitch, roll
+      rotMatZ = Mat4.rotateZ(Mat4.create(), Mat4.identity(Mat4.create()), mesh.rotation[2])
+      rotMatX = Mat4.rotateX(Mat4.create(), Mat4.identity(Mat4.create()), mesh.rotation[0])
+      rotMatY = Mat4.rotateY(Mat4.create(), Mat4.identity(Mat4.create()), mesh.rotation[1])
+      rotMatrix = Mat4.create()
+      Mat4.multiply(rotMatrix, rotMatZ, rotMatX)
+      Mat4.multiply(rotMatrix, rotMatrix, rotMatY)
 
-      transformMatrix = worldMatrix.multiply(viewMatrix).multiply(projectionMatrix)
+      translationMatrix = Mat4.identity(Mat4.create())
+      Mat4.translate(translationMatrix, translationMatrix, mesh.position)
+
+      worldMatrix = Mat4.multiply(Mat4.create(), rotMatrix, translationMatrix)
+
+      transformMatrix = Mat4.create()
+
+      Mat4.multiply(transformMatrix, projectionMatrix, viewMatrix)
+      Mat4.multiply(transformMatrix, transformMatrix, worldMatrix)
 
       ### Points only ###
       # for vertex in mesh.vertices
@@ -137,9 +156,9 @@ class Device
       #   @drawLine(point0, point1)
 
       for face in mesh.faces
-        vertexA = mesh.vertices[face.A]
-        vertexB = mesh.vertices[face.B]
-        vertexC = mesh.vertices[face.C]
+        vertexA = mesh.vertices[face[0]]
+        vertexB = mesh.vertices[face[1]]
+        vertexC = mesh.vertices[face[2]]
         pixelA = @project(vertexA, transformMatrix)
         pixelB = @project(vertexB, transformMatrix)
         pixelC = @project(vertexC, transformMatrix)
@@ -156,39 +175,41 @@ meshes = []
 mesh = new Mesh("Cube", 8, 12)
 meshes.push mesh
 mesh.vertices = [
-  new Vector3(-1,  1,  1)
-  new Vector3( 1,  1,  1)
-  new Vector3(-1, -1,  1)
-  new Vector3( 1, -1,  1)
-  new Vector3(-1,  1, -1)
-  new Vector3( 1,  1, -1)
-  new Vector3( 1, -1, -1)
-  new Vector3(-1, -1, -1)
+  [ -1,  1,  1 ]
+  [  1,  1,  1 ]
+  [ -1, -1,  1 ]
+  [  1, -1,  1 ]
+  [ -1,  1, -1 ]
+  [  1,  1, -1 ]
+  [  1, -1, -1 ]
+  [ -1, -1, -1 ]
 ]
 mesh.faces = [
-  { A: 0, B: 1, C: 2 }
-  { A: 1, B: 2, C: 3 }
-  { A: 1, B: 3, C: 6 }
-  { A: 1, B: 5, C: 6 }
-  { A: 0, B: 1, C: 4 }
-  { A: 1, B: 4, C: 5 }
-  { A: 2, B: 3, C: 7 }
-  { A: 3, B: 6, C: 7 }
-  { A: 0, B: 2, C: 7 }
-  { A: 0, B: 4, C: 7 }
-  { A: 4, B: 5, C: 6 }
-  { A: 4, B: 6, C: 7 }
+  [ 0, 1, 2 ]
+  [ 1, 2, 3 ]
+  [ 1, 3, 6 ]
+  [ 1, 5, 6 ]
+  [ 0, 1, 4 ]
+  [ 1, 4, 5 ]
+  [ 2, 3, 7 ]
+  [ 3, 6, 7 ]
+  [ 0, 2, 7 ]
+  [ 0, 4, 7 ]
+  [ 4, 5, 6 ]
+  [ 4, 6, 7 ]
 ]
 
-camera.position = new Vector3(0, 0, 20)
-camera.target = new Vector3(0, 0, 0)
+camera.position = Vec3.fromValues(0, 0, 20)
+camera.target = Vec3.fromValues(0, 0, 0)
 
 
 render = ->
   device.clear()
 
-  mesh.rotation.x += 0.01
-  mesh.rotation.z += 0.01
+  # X
+  mesh.rotation[0] += 0.01
+  # Z
+  mesh.rotation[2] += 0.01
 
   device.render(camera, meshes)
   device.present()

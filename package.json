@@ -15,6 +15,10 @@
   , "browserify-shim": "~3.8.2"
   , "coffee-script": "~1.9.0"
   , "coffeeify": "~1.0.0"
+  , "gl-matrix-vec2": "2.2.1-npm"
+  , "gl-matrix-vec3": "2.2.1-npm"
+  , "gl-matrix-vec4": "2.2.1-npm"
+  , "gl-matrix-mat4": "2.2.1-npm"
   , "gulp": "~3.8.10"
   , "gulp-jade": "1.0.0"
   , "gulp-sass": "~1.3.2"
@@ -23,11 +27,5 @@
   , "lodash": "~3.2.0"
   , "vinyl-source-stream": "~1.0.0"
   , "watchify": "~2.3.0"
-  }
-, "browserify": {
-    "transform": [ "browserify-shim" ]
-  }
-, "browserify-shim": {
-    "babylon-math": "global:BABYLON"
   }
 }
