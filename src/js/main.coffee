@@ -127,21 +127,15 @@ class Device
     projectionMatrix = Mat4.perspective(Mat4.create(), 0.78, @canvas.width / @canvas.height, 0.01, 100.0)
 
     for mesh, index in meshes
-      # Rotate yaw, pitch, roll
-      rotMatZ = Mat4.rotateZ(Mat4.create(), Mat4.identity(Mat4.create()), mesh.rotation[2])
-      rotMatX = Mat4.rotateX(Mat4.create(), Mat4.identity(Mat4.create()), mesh.rotation[0])
-      rotMatY = Mat4.rotateY(Mat4.create(), Mat4.identity(Mat4.create()), mesh.rotation[1])
-      rotMatrix = Mat4.create()
-      Mat4.multiply(rotMatrix, rotMatZ, rotMatX)
-      Mat4.multiply(rotMatrix, rotMatrix, rotMatY)
+      # Rotate & translate
+      worldMatrix = Mat4.identity(Mat4.create())
+      Mat4.rotateZ(worldMatrix, worldMatrix, mesh.rotation[2])
+      Mat4.rotateY(worldMatrix, worldMatrix, mesh.rotation[1])
+      Mat4.rotateX(worldMatrix, worldMatrix, mesh.rotation[0])
+      Mat4.translate(worldMatrix, worldMatrix, mesh.position)
 
-      translationMatrix = Mat4.identity(Mat4.create())
-      Mat4.translate(translationMatrix, translationMatrix, mesh.position)
-
-      worldMatrix = Mat4.multiply(Mat4.create(), rotMatrix, translationMatrix)
-
+      # PVM
       transformMatrix = Mat4.create()
-
       Mat4.multiply(transformMatrix, projectionMatrix, viewMatrix)
       Mat4.multiply(transformMatrix, transformMatrix, worldMatrix)
 
