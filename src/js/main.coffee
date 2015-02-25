@@ -1,10 +1,11 @@
-$ = require 'jquery'
-_ = require 'lodash'
+# $ = require 'jquery'
+# _ = require 'lodash'
 
 Vec2 = require 'gl-matrix-vec2'
 Vec3 = require 'gl-matrix-vec3'
 Vec4 = require 'gl-matrix-vec4'
 Mat4 = require 'gl-matrix-mat4'
+Teapot = require 'teapot'
 
 
 # http://blogs.msdn.com/b/davrous/archive/2013/06/13/tutorial-series-learning-how-to-write-a-3d-soft-engine-from-scratch-in-c-typescript-or-javascript.aspx
@@ -80,8 +81,8 @@ class Device
   drawPoint: (point) ->
     # Clipping what's visible on screen
     if 0 <= point[0] < @canvas.width && 0 <= point[1] < @canvas.height
-      # draw yellow
-      @putPixel point[0], point[1], {r:1, g:1, b:0, a:1}
+      # draw white
+      @putPixel point[0], point[1], {r:1, g:1, b:1, a:1}
 
   drawLine: (p0, p1) ->
     p0p1 = Vec2.subtract(Vec2.create(), p1, p0)
@@ -166,9 +167,8 @@ device = new Device(canvas)
 camera = new Camera()
 meshes = []
 
-mesh = new Mesh("Cube", 8, 12)
-meshes.push mesh
-mesh.vertices = [
+cubeMesh = new Mesh("Cube", 8, 12)
+cubeMesh.vertices = [
   [ -1,  1,  1 ]
   [  1,  1,  1 ]
   [ -1, -1,  1 ]
@@ -178,7 +178,7 @@ mesh.vertices = [
   [  1, -1, -1 ]
   [ -1, -1, -1 ]
 ]
-mesh.faces = [
+cubeMesh.faces = [
   [ 0, 1, 2 ]
   [ 1, 2, 3 ]
   [ 1, 3, 6 ]
@@ -192,8 +192,14 @@ mesh.faces = [
   [ 4, 5, 6 ]
   [ 4, 6, 7 ]
 ]
+# meshes.push cubeMesh
 
-camera.position = Vec3.fromValues(0, 0, 20)
+mesh = new Mesh('Teapot')
+mesh.vertices = Teapot.positions
+mesh.faces = Teapot.cells
+meshes.push mesh
+
+camera.position = Vec3.fromValues(0, 0, 80)
 camera.target = Vec3.fromValues(0, 0, 0)
 
 
