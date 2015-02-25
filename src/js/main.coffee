@@ -7,6 +7,7 @@ Vec4 = require 'gl-matrix-vec4'
 Mat4 = require 'gl-matrix-mat4'
 Teapot = require 'teapot'
 
+WIREFRAME = location.hash.split('#')[1] == 'wireframe'
 
 # http://blogs.msdn.com/b/davrous/archive/2013/06/13/tutorial-series-learning-how-to-write-a-3d-soft-engine-from-scratch-in-c-typescript-or-javascript.aspx
 
@@ -19,9 +20,21 @@ class Mesh
   constructor: (@name) ->
     @vertices = []
     @faces = []
+    @normals = []
     @rotation = Vec3.create()
     @position = Vec3.create()
 
+  computeNormals: ->
+    for face, i in @faces
+      v1 = @vertices[face[0]]
+      v2 = @vertices[face[1]]
+      v3 = @vertices[face[2]]
+      cb = Vec2.subtract(Vec2.create(), v3, v2)
+      ab = Vec2.subtract(Vec2.create(), v1, v2)
+
+      normal = Vec2.cross(Vec3.create(), cb, ab)
+      Vec3.normalize(normal, normal)
+      @normals[i] = normal
 
 class Device
   constructor: (@canvas) ->
@@ -30,33 +43,39 @@ class Device
     @width = @canvas.width
     @height = @canvas.height
     @context = @canvas.getContext('2d')
+    @depthbuffer = []
 
   # This function is called to clear the back buffer with a specific color
   clear: ->
     # Clearing with black color by default
-    # @context.clearRect(0, 0, @canvas.width, @canvas.height)
+    # @context.clearRect(0, 0, @width, @height)
     @context.fillStyle = 'black'
-    @context.fillRect(0, 0, @canvas.width, @canvas.height)
+    @context.fillRect(0, 0, @width, @height)
     # Once cleared with black pixels, we're getting back the associated
     # image data to clear out back buffer
-    @backbuffer = @context.getImageData(0, 0, @canvas.width, @canvas.height)
+    @backbuffer = @context.getImageData(0, 0, @width, @height)
+    @depthbuffer[i] = 1000000.0 for i in [0...@width * @height] by 1
 
   # Once everything is ready, we can flush the back buffer into
   # the front bufer
   present: ->
     @context.putImageData(@backbuffer, 0, 0)
 
-  putPixel: (x, y, color) ->
+  putPixel: (x, y, z, color) ->
     @backbufferdata = @backbuffer.data
     # As we have a 1D array for our back buffer, we need to know the
     # equivalent 1D cell index on the 2D coordinates of the screen
-    index = ((x >> 0) + (y >> 0) * @canvas.width) * 4
+    index = ((x >> 0) + (y >> 0) * @width)
+    index4 = index * 4
+
+    return if @depthbuffer[index] < z
+    @depthbuffer[index] = z
 
     # RGBA color space is used by the HTML5 canvas
-    @backbufferdata[index + 0] = color[0] * 255
-    @backbufferdata[index + 1] = color[1] * 255
-    @backbufferdata[index + 2] = color[2] * 255
-    @backbufferdata[index + 3] = color[3] * 255
+    @backbufferdata[index4 + 0] = color[0] * 255
+    @backbufferdata[index4 + 1] = color[1] * 255
+    @backbufferdata[index4 + 2] = color[2] * 255
+    @backbufferdata[index4 + 3] = color[3] * 255
 
   # Project takes some 3D coordinates and transforms them in 2D
   # coordinates using the transformation matrix
@@ -68,22 +87,23 @@ class Device
     w = point[3]
     point[0] /= w
     point[1] /= w
+    point[2] /= w # do we need to do this?
 
     # The transformed coordinates will be based on a coordinate
     # system starting on the center of the screen. But drawing on
     # screen normally starts from top left. We then need to transform
     # them again to have (0, 0) on top left
-    x =  point[0] * @canvas.width  + @canvas.width  / 2.0 >> 0
-    y = -point[1] * @canvas.height + @canvas.height / 2.0 >> 0
-    return Vec2.fromValues(x, y)
+    x = ( point[0] * @width  + @width  / 2.0) >> 0
+    y = (-point[1] * @height + @height / 2.0) >> 0
+    return Vec3.fromValues(x, y, point[2])
 
   # drawPoint calls putPixel but does the clipping operation before
   drawPoint: (point, color) ->
     color ||= Vec4.fromValues(1, 1, 1, 1)
     # Clipping what's visible on screen
-    if 0 <= point[0] < @canvas.width && 0 <= point[1] < @canvas.height
+    if 0 <= point[0] < @width && 0 <= point[1] < @height
       # draw white
-      @putPixel point[0], point[1], color
+      @putPixel point[0], point[1], point[2], color
 
   drawLine: (p0, p1) ->
     p0p1 = Vec2.subtract(Vec2.create(), p1, p0)
@@ -121,10 +141,10 @@ class Device
         err += dx
         y0 += sy
 
-  drawScanLine: (x1, x2, y, color) ->
+  drawScanLine: (x1, x2, y, z, color) ->
     [x1, x2] = [x2, x1] if x1 > x2
     for x in [(x1 | 0)..(x2 | 0)] by 1
-      @drawPoint(Vec2.fromValues(x, y), color)
+      @drawPoint(Vec3.fromValues(x, y, z), color)
 
   # The main method of the engine that recomputes each vertex
   # projection on every frame
@@ -132,7 +152,7 @@ class Device
     up = Vec3.fromValues(0, 1, 0)
     viewMatrix = Mat4.lookAt(Mat4.create(), camera.position, camera.target, up)
 
-    projectionMatrix = Mat4.perspective(Mat4.create(), 0.78, @canvas.width / @canvas.height, 0.01, 100.0)
+    projectionMatrix = Mat4.perspective(Mat4.create(), 0.78, @width / @height, 0.01, 100.0)
 
     for mesh, index in meshes
       # Rotate & translate
@@ -158,29 +178,43 @@ class Device
       #   @drawLine(point0, point1)
 
       ### Wireframe, Bresenham's ###
-      # for face in mesh.faces
-      #   vertexA = mesh.vertices[face[0]]
-      #   vertexB = mesh.vertices[face[1]]
-      #   vertexC = mesh.vertices[face[2]]
-      #   pixelA = @project(vertexA, transformMatrix)
-      #   pixelB = @project(vertexB, transformMatrix)
-      #   pixelC = @project(vertexC, transformMatrix)
-      #   @drawBLine(pixelA, pixelB)
-      #   @drawBLine(pixelB, pixelC)
-      #   @drawBLine(pixelC, pixelA)
+      if WIREFRAME
+        for face in mesh.faces
+          vertexA = mesh.vertices[face[0]]
+          vertexB = mesh.vertices[face[1]]
+          vertexC = mesh.vertices[face[2]]
+          pixelA = @project(vertexA, transformMatrix)
+          pixelB = @project(vertexB, transformMatrix)
+          pixelC = @project(vertexC, transformMatrix)
+          @drawBLine(pixelA, pixelB)
+          @drawBLine(pixelB, pixelC)
+          @drawBLine(pixelC, pixelA)
+      else
+        for face, faceIndex in mesh.faces
+          vertexA = mesh.vertices[face[0]]
+          vertexB = mesh.vertices[face[1]]
+          vertexC = mesh.vertices[face[2]]
+          pixelA = @project(vertexA, transformMatrix)
+          pixelB = @project(vertexB, transformMatrix)
+          pixelC = @project(vertexC, transformMatrix)
+          # grayVal = (faceIndex % mesh.faces.length) / mesh.faces.length
+          # color = Vec4.fromValues(grayVal, grayVal, grayVal, 1)
+          normal = mesh.normals[faceIndex]
+          centerPoint = Vec3.add(Vec3.create(), vertexA, vertexB)
+          Vec3.add(centerPoint, centerPoint, vertexC)
+          Vec3.scale(centerPoint, centerPoint, 1/3)
 
+          light1 = Vec3.fromValues(0, 10, 20)
+          Vec3.subtract(light1, light1, centerPoint)
+          Vec3.normalize(light1, light1)
 
-      for face, faceIndex in mesh.faces
-        vertexA = mesh.vertices[face[0]]
-        vertexB = mesh.vertices[face[1]]
-        vertexC = mesh.vertices[face[2]]
-        pixelA = @project(vertexA, transformMatrix)
-        pixelB = @project(vertexB, transformMatrix)
-        pixelC = @project(vertexC, transformMatrix)
-        grayVal = (faceIndex % mesh.faces.length) / mesh.faces.length
-        color = Vec4.fromValues(grayVal, grayVal, grayVal, 1)
-        @drawTriangle(pixelA, pixelB, pixelC, color)
+          light2 = Vec3.fromValues(0, 10, -20)
+          Vec3.subtract(light2, light2, centerPoint)
+          Vec3.normalize(light2, light2)
 
+          grayVal = Math.max(0, Vec3.dot(normal, light1)) + Math.max(0, Vec3.dot(normal, light2))
+          color = Vec4.fromValues(grayVal, grayVal, grayVal, 1)
+          @drawTriangle(pixelA, pixelB, pixelC, color)
 
   _fillBottomFlatTriangle: (v1, v2, v3, color) ->
     invSlope1 = (v2[0] - v1[0]) / (v2[1] - v1[1])
@@ -188,7 +222,8 @@ class Device
     curx1 = v1[0]
     curx2 = v1[0]
     for scanlineY in [ v1[1] .. v2[1] ] by 1
-      @drawScanLine(curx1, curx2, scanlineY, color)
+      z = Math.min(v1[2], v2[2], v3[2]) # naive
+      @drawScanLine(curx1, curx2, scanlineY, z, color)
       curx1 += invSlope1
       curx2 += invSlope2
 
@@ -198,7 +233,8 @@ class Device
     curx1 = v3[0]
     curx2 = v3[0]
     for scanlineY in [ v3[1] .. v1[1] ] by -1
-      @drawScanLine(curx1, curx2, scanlineY, color)
+      z = Math.min(v1[2], v2[2], v3[2]) # naive
+      @drawScanLine(curx1, curx2, scanlineY, z, color)
       curx1 -= invSlope1
       curx2 -= invSlope2
 
@@ -215,7 +251,7 @@ class Device
       @_fillBottomFlatTriangle(v1, v2, v3, color)
     else
      # general case - split triangle into a top-flat and a bottom-flat
-     v4 = Vec2.fromValues(v1[0] + ((v2[1] - v1[1]) / (v3[1] - v1[1])) * (v3[0] - v1[0]), v2[1])
+     v4 = Vec3.fromValues(v1[0] + ((v2[1] - v1[1]) / (v3[1] - v1[1])) * (v3[0] - v1[0]), v2[1], v2[2])
      v4[0] = v4[0] | 0
      @_fillBottomFlatTriangle(v1, v2, v4, color)
      @_fillTopFlatTriangle(v2, v4, v3, color)
@@ -256,6 +292,7 @@ cubeMesh.faces = [
 mesh = new Mesh('Teapot')
 mesh.vertices = Teapot.positions
 mesh.faces = Teapot.cells
+mesh.computeNormals()
 meshes.push mesh
 
 camera.position = Vec3.fromValues(0, 0, 80)
@@ -266,9 +303,11 @@ render = ->
   device.clear()
 
   # X
-  mesh.rotation[0] += 0.01
+  # mesh.rotation[0] += 0.01
+  # Y
+  mesh.rotation[1] += 0.02
   # Z
-  mesh.rotation[2] += 0.01
+  # mesh.rotation[2] += 0.01
 
   device.render(camera, meshes)
   device.present()
