@@ -53,10 +53,10 @@ class Device
     index = ((x >> 0) + (y >> 0) * @canvas.width) * 4
 
     # RGBA color space is used by the HTML5 canvas
-    @backbufferdata[index + 0] = color.r * 255
-    @backbufferdata[index + 1] = color.g * 255
-    @backbufferdata[index + 2] = color.b * 255
-    @backbufferdata[index + 3] = color.a * 255
+    @backbufferdata[index + 0] = color[0] * 255
+    @backbufferdata[index + 1] = color[1] * 255
+    @backbufferdata[index + 2] = color[2] * 255
+    @backbufferdata[index + 3] = color[3] * 255
 
   # Project takes some 3D coordinates and transforms them in 2D
   # coordinates using the transformation matrix
@@ -78,11 +78,12 @@ class Device
     return Vec2.fromValues(x, y)
 
   # drawPoint calls putPixel but does the clipping operation before
-  drawPoint: (point) ->
+  drawPoint: (point, color) ->
+    color ||= Vec4.fromValues(1, 1, 1, 1)
     # Clipping what's visible on screen
     if 0 <= point[0] < @canvas.width && 0 <= point[1] < @canvas.height
       # draw white
-      @putPixel point[0], point[1], {r:1, g:1, b:1, a:1}
+      @putPixel point[0], point[1], color
 
   drawLine: (p0, p1) ->
     p0p1 = Vec2.subtract(Vec2.create(), p1, p0)
@@ -98,6 +99,7 @@ class Device
     @drawLine(p0, midPoint)
     @drawLine(midPoint, p1)
 
+  # http://en.wikipedia.org/wiki/Bresenham's_line_algorithm
   drawBLine: (p0, p1) ->
     x0 = p0[0] >> 0
     y0 = p0[1] >> 0
@@ -118,6 +120,11 @@ class Device
       if e2 < dx
         err += dx
         y0 += sy
+
+  drawScanLine: (x1, x2, y, color) ->
+    [x1, x2] = [x2, x1] if x1 > x2
+    for x in [(x1 | 0)..(x2 | 0)] by 1
+      @drawPoint(Vec2.fromValues(x, y), color)
 
   # The main method of the engine that recomputes each vertex
   # projection on every frame
@@ -150,16 +157,68 @@ class Device
       #   point1 = @project(mesh.vertices[i+1], transformMatrix)
       #   @drawLine(point0, point1)
 
-      for face in mesh.faces
+      ### Wireframe, Bresenham's ###
+      # for face in mesh.faces
+      #   vertexA = mesh.vertices[face[0]]
+      #   vertexB = mesh.vertices[face[1]]
+      #   vertexC = mesh.vertices[face[2]]
+      #   pixelA = @project(vertexA, transformMatrix)
+      #   pixelB = @project(vertexB, transformMatrix)
+      #   pixelC = @project(vertexC, transformMatrix)
+      #   @drawBLine(pixelA, pixelB)
+      #   @drawBLine(pixelB, pixelC)
+      #   @drawBLine(pixelC, pixelA)
+
+
+      for face, faceIndex in mesh.faces
         vertexA = mesh.vertices[face[0]]
         vertexB = mesh.vertices[face[1]]
         vertexC = mesh.vertices[face[2]]
         pixelA = @project(vertexA, transformMatrix)
         pixelB = @project(vertexB, transformMatrix)
         pixelC = @project(vertexC, transformMatrix)
-        @drawBLine(pixelA, pixelB)
-        @drawBLine(pixelB, pixelC)
-        @drawBLine(pixelC, pixelA)
+        grayVal = (faceIndex % mesh.faces.length) / mesh.faces.length
+        color = Vec4.fromValues(grayVal, grayVal, grayVal, 1)
+        @drawTriangle(pixelA, pixelB, pixelC, color)
+
+
+  _fillBottomFlatTriangle: (v1, v2, v3, color) ->
+    invSlope1 = (v2[0] - v1[0]) / (v2[1] - v1[1])
+    invSlope2 = (v3[0] - v1[0]) / (v3[1] - v1[1])
+    curx1 = v1[0]
+    curx2 = v1[0]
+    for scanlineY in [ v1[1] .. v2[1] ] by 1
+      @drawScanLine(curx1, curx2, scanlineY, color)
+      curx1 += invSlope1
+      curx2 += invSlope2
+
+  _fillTopFlatTriangle: (v1, v2, v3, color) ->
+    invSlope1 = (v3[0] - v1[0]) / (v3[1] - v1[1])
+    invSlope2 = (v3[0] - v2[0]) / (v3[1] - v2[1])
+    curx1 = v3[0]
+    curx2 = v3[0]
+    for scanlineY in [ v3[1] .. v1[1] ] by -1
+      @drawScanLine(curx1, curx2, scanlineY, color)
+      curx1 -= invSlope1
+      curx2 -= invSlope2
+
+  # http://www.sunshine2k.de/coding/java/TriangleRasterization/TriangleRasterization.html
+  drawTriangle: (v1, v2, v3, color) ->
+    # sort vertices by Y ascending (so v1 is topmost point)
+    [v1, v2] = [v2, v1] if v1[1] > v2[1]
+    [v2, v3] = [v3, v2] if v2[1] > v3[1]
+    [v1, v2] = [v2, v1] if v1[1] > v2[1]
+
+    if v1[1] == v2[1]
+      @_fillTopFlatTriangle(v1, v2, v3, color)
+    else if v2[1] == v3[1]
+      @_fillBottomFlatTriangle(v1, v2, v3, color)
+    else
+     # general case - split triangle into a top-flat and a bottom-flat
+     v4 = Vec2.fromValues(v1[0] + ((v2[1] - v1[1]) / (v3[1] - v1[1])) * (v3[0] - v1[0]), v2[1])
+     v4[0] = v4[0] | 0
+     @_fillBottomFlatTriangle(v1, v2, v4, color)
+     @_fillTopFlatTriangle(v2, v4, v3, color)
 
 
 canvas = document.getElementById('front-buffer')
@@ -169,14 +228,14 @@ meshes = []
 
 cubeMesh = new Mesh("Cube", 8, 12)
 cubeMesh.vertices = [
-  [ -1,  1,  1 ]
-  [  1,  1,  1 ]
-  [ -1, -1,  1 ]
-  [  1, -1,  1 ]
-  [ -1,  1, -1 ]
-  [  1,  1, -1 ]
-  [  1, -1, -1 ]
-  [ -1, -1, -1 ]
+  [ -10,  10,  10 ]
+  [  10,  10,  10 ]
+  [ -10, -10,  10 ]
+  [  10, -10,  10 ]
+  [ -10,  10, -10 ]
+  [  10,  10, -10 ]
+  [  10, -10, -10 ]
+  [ -10, -10, -10 ]
 ]
 cubeMesh.faces = [
   [ 0, 1, 2 ]
