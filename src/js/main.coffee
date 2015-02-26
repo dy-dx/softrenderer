@@ -79,9 +79,12 @@ class Device
 
   # Project takes some 3D coordinates and transforms them in 2D
   # coordinates using the transformation matrix
-  project: (coord, transMat) ->
+  project: (coord, transMat, worldMat, normal) ->
     point = Vec4.fromValues(coord[0], coord[1], coord[2], 1)
     point = Vec4.transformMat4(Vec4.create(), point, transMat)
+
+    point3DWorld = Vec3.transformMat4(Vec3.create(), coord, worldMat)
+    normal3DWorld = Vec3.transformMat4(Vec3.create(), normal, worldMat)
 
     # perspective divide
     w = point[3]
@@ -95,7 +98,11 @@ class Device
     # them again to have (0, 0) on top left
     x = ( point[0] * @width  + @width  / 2.0) >> 0
     y = (-point[1] * @height + @height / 2.0) >> 0
-    return Vec3.fromValues(x, y, point[2])
+    return {
+      screen: Vec3.fromValues(x, y, point[2])
+      world: point3DWorld
+      normal: normal3DWorld
+    }
 
   # drawPoint calls putPixel but does the clipping operation before
   drawPoint: (point, color) ->
@@ -179,42 +186,40 @@ class Device
 
       ### Wireframe, Bresenham's ###
       if WIREFRAME
-        for face in mesh.faces
+        for face, faceIndex in mesh.faces
           vertexA = mesh.vertices[face[0]]
           vertexB = mesh.vertices[face[1]]
           vertexC = mesh.vertices[face[2]]
-          pixelA = @project(vertexA, transformMatrix)
-          pixelB = @project(vertexB, transformMatrix)
-          pixelC = @project(vertexC, transformMatrix)
-          @drawBLine(pixelA, pixelB)
-          @drawBLine(pixelB, pixelC)
-          @drawBLine(pixelC, pixelA)
+          normal = mesh.normals[faceIndex]
+
+          projectedA = @project(vertexA, transformMatrix, worldMatrix, normal)
+          projectedB = @project(vertexB, transformMatrix, worldMatrix, normal)
+          projectedC = @project(vertexC, transformMatrix, worldMatrix, normal)
+          @drawBLine(projectedA.screen, projectedB.screen)
+          @drawBLine(projectedB.screen, projectedC.screen)
+          @drawBLine(projectedC.screen, projectedA.screen)
       else
         for face, faceIndex in mesh.faces
           vertexA = mesh.vertices[face[0]]
           vertexB = mesh.vertices[face[1]]
           vertexC = mesh.vertices[face[2]]
-          pixelA = @project(vertexA, transformMatrix)
-          pixelB = @project(vertexB, transformMatrix)
-          pixelC = @project(vertexC, transformMatrix)
-          # grayVal = (faceIndex % mesh.faces.length) / mesh.faces.length
-          # color = Vec4.fromValues(grayVal, grayVal, grayVal, 1)
           normal = mesh.normals[faceIndex]
-          centerPoint = Vec3.add(Vec3.create(), vertexA, vertexB)
-          Vec3.add(centerPoint, centerPoint, vertexC)
+
+          projectedA = @project(vertexA, transformMatrix, worldMatrix, normal)
+          projectedB = @project(vertexB, transformMatrix, worldMatrix, normal)
+          projectedC = @project(vertexC, transformMatrix, worldMatrix, normal)
+
+          centerPoint = Vec3.add(Vec3.create(), projectedA.world, projectedB.world)
+          Vec3.add(centerPoint, centerPoint, projectedC.world)
           Vec3.scale(centerPoint, centerPoint, 1/3)
 
-          light1 = Vec3.fromValues(0, 10, 20)
+          light1 = Vec3.fromValues(-10, 20, 30)
           Vec3.subtract(light1, light1, centerPoint)
           Vec3.normalize(light1, light1)
 
-          light2 = Vec3.fromValues(0, 10, -20)
-          Vec3.subtract(light2, light2, centerPoint)
-          Vec3.normalize(light2, light2)
-
-          grayVal = Math.max(0, Vec3.dot(normal, light1)) + Math.max(0, Vec3.dot(normal, light2))
+          grayVal = Math.max(0, Vec3.dot(projectedA.normal, light1))
           color = Vec4.fromValues(grayVal, grayVal, grayVal, 1)
-          @drawTriangle(pixelA, pixelB, pixelC, color)
+          @drawTriangle(projectedA.screen, projectedB.screen, projectedC.screen, color)
 
   _fillBottomFlatTriangle: (v1, v2, v3, color) ->
     invSlope1 = (v2[0] - v1[0]) / (v2[1] - v1[1])
