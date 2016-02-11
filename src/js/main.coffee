@@ -29,10 +29,10 @@ class Mesh
       v1 = @vertices[face[0]]
       v2 = @vertices[face[1]]
       v3 = @vertices[face[2]]
-      cb = Vec2.subtract(Vec2.create(), v3, v2)
-      ab = Vec2.subtract(Vec2.create(), v1, v2)
+      cb = Vec3.subtract(Vec3.create(), v3, v2)
+      ab = Vec3.subtract(Vec3.create(), v1, v2)
 
-      normal = Vec2.cross(Vec3.create(), cb, ab)
+      normal = Vec3.cross(Vec3.create(), cb, ab)
       Vec3.normalize(normal, normal)
       @normals[i] = normal
 
