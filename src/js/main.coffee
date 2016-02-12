@@ -7,7 +7,10 @@ Vec4 = require 'gl-matrix-vec4'
 Mat4 = require 'gl-matrix-mat4'
 Teapot = require 'teapot'
 
-WIREFRAME = location.hash.split('#')[1] == 'wireframe'
+POINTS = location.search == '?points'
+WIREFRAME = location.search == '?wireframe'
+SOLID = location.search == '?solid'
+AHHHHH = location.search == '?AHHHHH'
 
 # http://blogs.msdn.com/b/davrous/archive/2013/06/13/tutorial-series-learning-how-to-write-a-3d-soft-engine-from-scratch-in-c-typescript-or-javascript.aspx
 
@@ -150,6 +153,14 @@ class Device
 
   drawScanLine: (x1, x2, y, z, color) ->
     [x1, x2] = [x2, x1] if x1 > x2
+
+    if AHHHHH
+      color[2] = color[2] * Math.cos(y % 10 + tick / 2) + 0.3
+      color[1] = color[1] * Math.sin((x1 + x2) / 2 + tick / 8)
+
+      # x1 += Math.tan(Math.floor(y/10 % 2) + tick / 10) * 8
+      # x2 += Math.tan(Math.floor(y/10 % 2) + tick / 10) * 8
+
     for x in [(x1 | 0)..(x2 | 0)] by 1
       @drawPoint(Vec3.fromValues(x, y, z), color)
 
@@ -174,18 +185,18 @@ class Device
       Mat4.multiply(transformMatrix, projectionMatrix, viewMatrix)
       Mat4.multiply(transformMatrix, transformMatrix, worldMatrix)
 
-      ### Points only ###
-      # for vertex in mesh.vertices
-      #   @drawPoint @project(vertex, transformMatrix)
-
       ### Naive line test ###
       # for vertex, i in mesh.vertices[0...-1]
-      #   point0 = @project(mesh.vertices[i+0], transformMatrix)
-      #   point1 = @project(mesh.vertices[i+1], transformMatrix)
+      #   point0 = @project(mesh.vertices[i+0], transformMatrix, worldMatrix, Vec3.create())
+      #   point1 = @project(mesh.vertices[i+1], transformMatrix, worldMatrix, Vec3.create())
       #   @drawLine(point0, point1)
 
-      ### Wireframe, Bresenham's ###
-      if WIREFRAME
+      ## Points only ###
+      if POINTS
+        for vertex in mesh.vertices
+          @drawPoint(@project(vertex, transformMatrix, worldMatrix, Vec3.create()).screen)
+        ### Wireframe, Bresenham's ###
+      else if WIREFRAME
         for face, faceIndex in mesh.faces
           vertexA = mesh.vertices[face[0]]
           vertexB = mesh.vertices[face[1]]
@@ -200,10 +211,17 @@ class Device
           @drawBLine(projectedC.screen, projectedA.screen)
       else
         for face, faceIndex in mesh.faces
-          vertexA = mesh.vertices[face[0]]
-          vertexB = mesh.vertices[face[1]]
-          vertexC = mesh.vertices[face[2]]
+          vertexA = mesh.vertices[face[0]].slice()
+          vertexB = mesh.vertices[face[1]].slice()
+          vertexC = mesh.vertices[face[2]].slice()
           normal = mesh.normals[faceIndex]
+
+          if AHHHHH
+            # displacement
+            vertexA[1] = vertexA[1] + Math.sin((vertexA[0]*1.5 + tick)/10) * 3.1
+            vertexB[1] = vertexB[1] + Math.sin((vertexB[0]*1.5 + tick)/10) * 3.1
+            vertexC[1] = vertexC[1] + Math.sin((vertexC[0]*1.5 + tick)/10) * 3.1
+
 
           projectedA = @project(vertexA, transformMatrix, worldMatrix, normal)
           projectedB = @project(vertexB, transformMatrix, worldMatrix, normal)
@@ -218,6 +236,8 @@ class Device
           Vec3.normalize(light1, light1)
 
           grayVal = Math.max(0, Vec3.dot(projectedA.normal, light1))
+          if SOLID
+            grayVal = 1
           color = Vec4.fromValues(grayVal, grayVal, grayVal, 1)
           @drawTriangle(projectedA.screen, projectedB.screen, projectedC.screen, color)
 
@@ -292,6 +312,7 @@ cubeMesh.faces = [
   [ 4, 5, 6 ]
   [ 4, 6, 7 ]
 ]
+# cubeMesh.computeNormals()
 # meshes.push cubeMesh
 
 mesh = new Mesh('Teapot')
@@ -303,8 +324,12 @@ meshes.push mesh
 camera.position = Vec3.fromValues(0, 0, 80)
 camera.target = Vec3.fromValues(0, 0, 0)
 
+# mesh.rotation = [0.3, 0.3, 0.3]
+
+tick = 0
 
 render = ->
+  tick += 1
   device.clear()
 
   # X
@@ -314,6 +339,7 @@ render = ->
   # Z
   # mesh.rotation[2] += 0.01
 
+  # cubeMesh.rotation[1] += 0.02
   device.render(camera, meshes)
   device.present()
 
